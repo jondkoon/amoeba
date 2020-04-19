@@ -13,8 +13,17 @@ function cc_collision(c1,c2)
 	return #distance <= c1.r+c2.r
 end
 
+function circle_distance(c1, c2, distance)
+	local dist = distance and distance or c1.pos - c2.pos
+	return #dist - c1.r - c2.r
+end
+
+local circle_id_counter = 0
 function make_circle(o)
+	circle_id_counter += 1
 	return {
+		id = circle_id_counter,
+		is_player = o.is_player,
 		pos = vector{o.x,o.y},
 		x = o.x,
 		y = o.y,
@@ -25,15 +34,16 @@ function make_circle(o)
 		dy = 0,
 		ddx = 0.3,
 		ddy = 0.3,
-		dx_max = 2,
-		dx_min = -2,
-		dy_max = 2,
-		dy_min = -2,
+		dx_max = o.v_max,
+		dx_min = -o.v_max,
+		dy_max = o.v_max,
+		dy_min = -o.v_max,
 		friction = 0.1,
 		update = function(self)
 			if (o.update) then
 				o.update(self)
 			end
+
 			self.dx = max(min(self.dx,self.dx_max),self.dx_min)
 			self.dy = max(min(self.dy,self.dy_max),self.dy_min)
 			
@@ -62,10 +72,12 @@ function make_circle(o)
 end
 
 player = make_circle({
+	is_player = true,
 	x = 10,
 	y = 10,
-	r = 2,
+	r = 4,
 	col = 11,
+	v_max = 0.6,
 	update = function(self)
 		if (btn(4)) then
 			self.ddx = 0.3
@@ -125,36 +137,76 @@ function make_random_circle()
 	return make_circle({
 		x = 128 - flr(rnd(256)),
 		y = 128 - flr(rnd(256)),
-		r = 3 + flr(rnd(7)),
-		col =  random_one(colors)
+		r = 2 + flr(rnd(2)),
+		col =  random_one(colors),
+		v_max = 0.5
 	})
 end
 
-for i = 0, 40 do
+for i = 0, 100 do
 	local circle = make_random_circle()
 	add(objects, circle)
 	add(circles, circle)
 end
 
+
+local current_objects = {}
 function _update60()
+	current_objects = {}
+
+	
+
+	local max_right = player.x + 64
+	local max_left = player.x - 64
+	local max_top = player.y - 64
+	local max_bottom = player.y + 64
+
 	for o in all(objects) do
+		if (o.x < max_right and o.x > max_left and o.y > max_top and o.y < max_bottom) then
+			add(current_objects, o)
+		end
+	end
+
+	for o in all(current_objects) do
 		if (o.update) then
 			o:update()
 		end
 	end
 
-	for circle in all(circles) do
-		if (cc_collision(player, circle)) then
-			player.r += circle.r / 8
-			del(circles, circle)
-			del(objects, circle)
+	for k1, c1 in pairs(current_objects) do
+		local closest = nil
+		local closest_resultant = nil
+		local closest_distance = 128
+		for k2, c2 in pairs(current_objects) do
+			if (c1 != c2) then
+				local resultant = c1.pos - c2.pos
+				local distance = circle_distance(c1, c2, resultant)
+
+				if (distance < 20 and distance <= closest_distance) then
+					closest = c2
+					closest_distance = distance
+					closest_resultant = resultant
+				end
+
+				local is_collision = #resultant < c1.r + c2.r
+				if (is_collision) then
+					local bigger = c1.r >= c2.r and c1 or c2
+					local smaller = c1.r >= c2.r and c2 or c1				
+					bigger.r += smaller.r / 8
+					del(circles, smaller)
+					del(objects, smaller)
+				end
+			end
 		end
 
-		local distance = circle.pos - player.pos
-		if (#distance - player.r - circle.r <= 32) then
-			circle.col = 7
-		else
-			circle.col = circle.inactive_col
+		if (not c1.is_player and closest) then 
+			if (closest.r <= c1.r) then
+				c1.dx = -closest_resultant.x
+				c1.dy = -closest_resultant.y
+			else 
+				c1.dx = closest_resultant.x
+				c1.dy = closest_resultant.y
+			end
 		end
 	end
 end
@@ -179,7 +231,7 @@ function _draw()
 	local center_x = player.x - 64
 	local center_y = player.y - 64
 	camera(center_x, center_y)
-	for o in all(objects) do
+	for o in all(current_objects) do
 		if (o.draw) then
 			o:draw()
 		end
