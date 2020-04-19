@@ -67,7 +67,6 @@ player = make_circle({
 	r = 2,
 	col = 11,
 	update = function(self)
-
 		if (btn(4)) then
 			self.ddx = 0.3
 			self.ddy = 0.3
@@ -149,6 +148,13 @@ function _update60()
 			player.r += circle.r / 8
 			del(circles, circle)
 			del(objects, circle)
+		end
+
+		local distance = circle.pos - player.pos
+		if (#distance - player.r - circle.r <= 32) then
+			circle.col = 7
+		else
+			circle.col = circle.inactive_col
 		end
 	end
 end
