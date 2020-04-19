@@ -18,6 +18,10 @@ function circle_distance(c1, c2, distance)
 	return #dist - c1.r - c2.r
 end
 
+function sign(x)
+	return x <= 0 and -1 or 1
+end
+
 local circle_id_counter = 0
 function make_circle(o)
 	circle_id_counter += 1
@@ -34,6 +38,7 @@ function make_circle(o)
 		dy = 0,
 		ddx = 0.3,
 		ddy = 0.3,
+		v_max = o.v_max,
 		dx_max = o.v_max,
 		dx_min = -o.v_max,
 		dy_max = o.v_max,
@@ -54,9 +59,11 @@ function make_circle(o)
 		draw = function(self)
 			circfill(self.x,self.y,self.r,self.col)
 			local half_r = flr(self.r / 2)
+
+			local mouth_height_divisor = self.is_bigger and  2 or 4
 			
 			-- mouth
-			rectfill(self.x - half_r, self.y + 1, self.x + half_r, self.y + max(1, flr(self.r / 2)), 0)
+			rectfill(self.x - half_r, self.y + 1, self.x + half_r, self.y + max(1, flr(self.r / mouth_height_divisor)), 0)
 
 			-- left whites
 			rectfill(self.x - half_r, self.y - half_r, self.x - half_r + flr(self.r / 4), self.y - half_r + flr(self.r / 4), 7)
@@ -64,9 +71,14 @@ function make_circle(o)
 			rectfill(self.x + half_r, self.y - half_r,self.x + half_r - flr(self.r / 4), self.y - half_r + flr(self.r / 4), 7)
 
 			-- left blacks
-			rectfill(self.x - half_r + flr(self.r / 4), self.y - half_r, self.x - half_r + flr(self.r / 4) + flr(self.r / 4), self.y - half_r + flr(self.r / 4), 0)
-			-- right whites
-			rectfill(self.x + half_r + flr(self.r / 4), self.y - half_r, self.x + half_r + flr(self.r / 4) - flr(self.r / 4), self.y - half_r + flr(self.r / 4), 0)			
+			local pupil_offset = self.dx >= 0 and flr(self.r / 4) or -flr(self.r / 4)
+			local start_x = self.x - half_r + pupil_offset
+			rectfill(start_x, self.y - half_r, start_x + flr(self.r / 4), self.y - half_r + flr(self.r / 4), 0)
+
+			-- right blacks
+			local pupil_offset = self.dx >= 0 and flr(self.r / 4) or -flr(self.r / 4)
+			local start_x = self.x + flr(self.r / 3) + pupil_offset
+			rectfill(start_x, self.y - half_r,start_x + flr(self.r / 4), self.y - half_r + flr(self.r / 4), 0)
 		end
 	}
 end
@@ -77,23 +89,20 @@ player = make_circle({
 	y = 10,
 	r = 4,
 	col = 11,
-	v_max = 0.6,
+	v_max = 1.5,
 	update = function(self)
 		if (btn(4)) then
-			self.ddx = 0.3
-			self.ddy = 0.3
-			self.dx_max = 4
-			self.dx_min = -4
-			self.dy_max = 4
-			self.dy_min = -4
+			local speed_up = self.v_max * 1.5
+			self.dx_max = speed_up
+			self.dx_min = -speed_up
+			self.dy_max = speed_up
+			self.dy_min = -speed_up
 		else
 			self.boosting = false
-			self.ddx = 0.3
-			self.ddy = 0.3
-			self.dx_max = 2
-			self.dx_min = -2
-			self.dy_max = 2
-			self.dy_min = -2
+			self.dx_max = self.v_max
+			self.dx_min = -self.v_max
+			self.dy_max = self.v_max
+			self.dy_min = -self.v_max
 		end
 
 		if (btn(0)) then
@@ -139,7 +148,7 @@ function make_random_circle()
 		y = 128 - flr(rnd(256)),
 		r = 2 + flr(rnd(2)),
 		col =  random_one(colors),
-		v_max = 0.5
+		v_max = 1.4
 	})
 end
 
@@ -153,8 +162,6 @@ end
 local current_objects = {}
 function _update60()
 	current_objects = {}
-
-	
 
 	local max_right = player.x + 64
 	local max_left = player.x - 64
@@ -192,21 +199,32 @@ function _update60()
 				if (is_collision) then
 					local bigger = c1.r >= c2.r and c1 or c2
 					local smaller = c1.r >= c2.r and c2 or c1				
-					bigger.r += smaller.r / 8
+					bigger.r += smaller.r / 20
 					del(circles, smaller)
 					del(objects, smaller)
 				end
 			end
 		end
 
-		if (not c1.is_player and closest) then 
+		if (closest) then 
 			if (closest.r <= c1.r) then
-				c1.dx = -closest_resultant.x
-				c1.dy = -closest_resultant.y
+				c1.is_bigger = true
+				closest.is_smaller = true
+				if (not c1.is_player) then
+					c1.dx = -1 * sign(closest_resultant.x) * c1.ddx
+					c1.dy = -1 * sign(closest_resultant.y) * c1.ddy
+				end
 			else 
-				c1.dx = closest_resultant.x
-				c1.dy = closest_resultant.y
+				c1.is_smaller = true
+				closest.is_bigger = true
+				if (not c1.is_player) then
+					c1.dx = sign(closest_resultant.x) * c1.ddx
+					c1.dy = sign(closest_resultant.y) * c1.ddy
+				end
 			end
+		else
+			c1.is_bigger = false
+			c1.is_smaller = false
 		end
 	end
 end
