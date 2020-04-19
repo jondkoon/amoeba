@@ -2,6 +2,10 @@ pico-8 cartridge // http://www.pico-8.com
 version 21
 __lua__
 
+function random_one(set)
+	return set[1 + flr(rnd(count(set)))]
+end
+
 c_col_inactive = 6
 c_col_active = 11
 
@@ -11,6 +15,7 @@ function make_circle(o)
 		y = o.y,
 		r = o.r,
 		col = o.col,
+		inactive_col = o.col,
 		dx = 0,
 		dy = 0,
 		ddx = 0.3,
@@ -36,10 +41,16 @@ function make_circle(o)
 	}
 end
 
+function dist(x1, y1, x2, y2)
+ local x, y = abs(x2 - x1), abs(y2 - y1)
+ if (x < 128 and y < 128) return sqrt(x * x + y * y)
+ local d = max(x, y)
+ local n = x / d * y / d
+ return sqrt(n * n + 1) * d
+end
+
 function cc_collision(c1,c2)
-	local distx = c1.x - c2.x
-	local disty = c1.y - c2.y
-	local distance = sqrt((distx*distx) + (disty*disty))
+	local distance = dist(c1.x, c1.y, c2.x, c2.y)
 	return distance <= c1.r+c2.r
 end
 
@@ -49,6 +60,24 @@ player = make_circle({
 	r = 3,
 	col = 8,
 	update = function(self)
+
+		if (btn(4)) then
+			self.ddx = 0.3
+			self.ddy = 0.3
+			self.dx_max = 4
+			self.dx_min = -4
+			self.dy_max = 4
+			self.dy_min = -4
+		else
+			self.boosting = false
+			self.ddx = 0.3
+			self.ddy = 0.3
+			self.dx_max = 2
+			self.dx_min = -2
+			self.dy_max = 2
+			self.dy_min = -2
+		end
+
 		if (btn(0)) then
 			self.dx -= self.ddx
 		elseif (btn(1)) then
@@ -81,16 +110,25 @@ player = make_circle({
 	end
 })
 
-target = make_circle({
-	x = 50,
-	y = 50,
-	r = 8,
-	col = 6
-})
-
 objects = {}
+circles = {}
 add(objects, player)
-add(objects, target)
+
+function make_random_circle()
+	local colors = { 0, 2, 3, 4, 9, 10, 11, 14 }
+	return make_circle({
+		x = 128 - flr(rnd(256)),
+		y = 128 - flr(rnd(256)),
+		r = 3 + flr(rnd(7)),
+		col =  random_one(colors)
+	})
+end
+
+for i = 0, 40 do
+	local circle = make_random_circle()
+	add(objects, circle)
+	add(circles, circle)
+end
 
 function _update60()
 	for o in all(objects) do
@@ -99,15 +137,20 @@ function _update60()
 		end
 	end
 
-	if (cc_collision(player, target)) then
-		target.col = c_col_active
-	else
-		target.col = c_col_inactive
+	for circle in all(circles) do
+		if (cc_collision(player, circle)) then
+			player.r += circle.r / 8
+			del(circles, circle)
+			del(objects, circle)
+		end
 	end
 end
 
 function _draw()
 	cls(12)
+	local center_x = player.x - 64
+	local center_y = player.y - 64
+	camera(center_x, center_y)
 	for o in all(objects) do
 		if (o.draw) then
 			o:draw()
