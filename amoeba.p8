@@ -22,6 +22,28 @@ function sign(x)
 	return x <= 0 and -1 or 1
 end
 
+function random_sign()
+	return sign(rnd(1) - 0.5)
+end
+
+local colors = {
+	13,
+	6,
+	10,
+	11,
+	9,
+	14,
+	1,
+	2,
+	8
+}
+local max_r = 9
+
+local size_to_color = {}
+for i = 2, max_r do
+	size_to_color[i] = colors[flr(i * #colors / max_r)]
+end
+
 local circle_id_counter = 0
 function make_circle(o)
 	circle_id_counter += 1
@@ -36,15 +58,22 @@ function make_circle(o)
 		inactive_col = o.col,
 		dx = 0,
 		dy = 0,
-		ddx = 0.3,
-		ddy = 0.3,
+		ddx = 0.15,
+		ddy = 0.15,
 		v_max = o.v_max,
 		dx_max = o.v_max,
 		dx_min = -o.v_max,
 		dy_max = o.v_max,
 		dy_min = -o.v_max,
-		friction = 0.1,
+		friction = 0.05,
+		set_pos = function(self, x, y)
+			self.x = x
+			self.y = y
+			self.pos.x = x
+			self.pos.y = y
+		end,
 		update = function(self)
+			self.r = max(min(max_r, self.r), 2)
 			if (o.update) then
 				o.update(self)
 			end
@@ -52,12 +81,17 @@ function make_circle(o)
 			self.dx = max(min(self.dx,self.dx_max),self.dx_min)
 			self.dy = max(min(self.dy,self.dy_max),self.dy_min)
 			
-			self.x += self.dx
-			self.y += self.dy
-			self.pos = vector{self.x,self.y}
+			local x = self.x + self.dx
+			local y = self.y + self.dy
+			self:set_pos(x, y)
 		end,
 		draw = function(self)
-			circfill(self.x,self.y,self.r,self.col)
+			local color = size_to_color[flr(self.r)]
+			if (self.r >= max_r) then
+				color = size_to_color[max_r]
+			end
+
+			circfill(self.x,self.y,self.r,color)
 			local half_r = flr(self.r / 2)
 
 			local mouth_height_divisor = self.is_bigger and  2 or 4
@@ -85,11 +119,10 @@ end
 
 player = make_circle({
 	is_player = true,
-	x = 10,
-	y = 10,
+	x = 0,
+	y = 0,
 	r = 4,
-	col = 11,
-	v_max = 1.5,
+	v_max = 1.2,
 	update = function(self)
 		if (btn(4)) then
 			local speed_up = self.v_max * 1.5
@@ -142,35 +175,85 @@ circles = {}
 add(objects, player)
 
 function make_random_circle()
-	local colors = { 8, 9, 10, 14, 6, 13 }
-	return make_circle({
-		x = 128 - flr(rnd(256)),
-		y = 128 - flr(rnd(256)),
-		r = 2 + flr(rnd(2)),
-		col =  random_one(colors),
-		v_max = 1.4
+	local distance_from_player = 30
+	local circle = make_circle({
+		x = 64 - flr(rnd(128)),
+		y = 64 - flr(rnd(128)),
+		r = 2 + flr(rnd(3)),
+		v_max = 0.3 + rnd(.1)
 	})
+
+	local resultant = circle.pos - player.pos
+	local distance = #resultant - circle.r - player.r
+
+	if (distance < distance_from_player) then
+		local new_x = circle.x + sign(resultant.x) * distance_from_player
+		local new_y = circle.y + sign(resultant.y) * distance_from_player
+		circle:set_pos(new_x, new_y)
+	end
+
+	return circle
 end
 
-for i = 0, 100 do
+for i = 0, 20 do
 	local circle = make_random_circle()
 	add(objects, circle)
 	add(circles, circle)
 end
 
+function recycle_circle(circle)
+	local x = player.x
+	local y = player.y
+	local off_vertically = rnd(1) < 0.5
+	if (off_vertically) then
+		x += -64 + rnd(128)
+		y += random_sign() * 70
+	else
+		y += -64 + rnd(128)
+		x += random_sign() * 70
+	end
+
+	local r_roll = rnd(10)
+
+	if (r_roll <= 2) then
+		circle.r = player.r - flr(rnd(2)) - 4
+	elseif (r_roll <= 4) then
+		circle.r = player.r - flr(rnd(2)) - 3
+	elseif (r_roll <= 6) then
+		circle.r = player.r - flr(rnd(2)) - 2
+	elseif (r_roll <= 8) then
+		circle.r = player.r - flr(rnd(2)) - 1
+	elseif (r_roll <= 9.5) then
+		circle.r = player.r - flr(rnd(2))
+	else
+		circle.r = player.r + 1
+	end
+
+	if (circle.is_player) then
+		circle.r = 4
+	end
+
+	circle:set_pos(x,y)
+	local resultant = circle.pos - player.pos
+	circle.dx = resultant.x + random_sign()
+	circle.dy = resultant.y + random_sign()
+end
 
 local current_objects = {}
+local c_counter = 1
 function _update60()
 	current_objects = {}
 
-	local max_right = player.x + 64
-	local max_left = player.x - 64
-	local max_top = player.y - 64
-	local max_bottom = player.y + 64
+	local max_right = player.x + 80
+	local max_left = player.x - 80
+	local max_top = player.y - 80
+	local max_bottom = player.y + 80
 
 	for o in all(objects) do
 		if (o.x < max_right and o.x > max_left and o.y > max_top and o.y < max_bottom) then
 			add(current_objects, o)
+		else
+			recycle_circle(o)
 		end
 	end
 
@@ -181,50 +264,56 @@ function _update60()
 	end
 
 	for k1, c1 in pairs(current_objects) do
-		local closest = nil
-		local closest_resultant = nil
-		local closest_distance = 128
-		for k2, c2 in pairs(current_objects) do
-			if (c1 != c2) then
-				local resultant = c1.pos - c2.pos
-				local distance = circle_distance(c1, c2, resultant)
-
-				if (distance < 20 and distance <= closest_distance) then
-					closest = c2
-					closest_distance = distance
-					closest_resultant = resultant
-				end
-
-				local is_collision = #resultant < c1.r + c2.r
-				if (is_collision) then
-					local bigger = c1.r >= c2.r and c1 or c2
-					local smaller = c1.r >= c2.r and c2 or c1				
-					bigger.r += smaller.r / 20
-					del(circles, smaller)
-					del(objects, smaller)
-				end
-			end
+		-- poor mans perf boost
+		c_counter += 1
+		if (c_counter > 5) then
+			c_counter = 1
 		end
+		if (c1.id % c_counter == 0) then
+			local closest = nil
+			local closest_resultant = nil
+			local closest_distance = 128
+			for k2, c2 in pairs(current_objects) do
+				if (c1 != c2) then
+					local resultant = c1.pos - c2.pos
+					local distance = circle_distance(c1, c2, resultant)
 
-		if (closest) then 
-			if (closest.r <= c1.r) then
-				c1.is_bigger = true
-				closest.is_smaller = true
-				if (not c1.is_player) then
-					c1.dx = -1 * sign(closest_resultant.x) * c1.ddx
-					c1.dy = -1 * sign(closest_resultant.y) * c1.ddy
-				end
-			else 
-				c1.is_smaller = true
-				closest.is_bigger = true
-				if (not c1.is_player) then
-					c1.dx = sign(closest_resultant.x) * c1.ddx
-					c1.dy = sign(closest_resultant.y) * c1.ddy
+					if (distance < 20 and distance <= closest_distance) then
+						closest = c2
+						closest_distance = distance
+						closest_resultant = resultant
+					end
+
+					local is_collision = #resultant < c1.r + c2.r
+					if (is_collision) then
+						local bigger = c1.r >= c2.r and c1 or c2
+						local smaller = c1.r >= c2.r and c2 or c1				
+						bigger.r += smaller.r / 20
+						recycle_circle(smaller)
+					end
 				end
 			end
-		else
-			c1.is_bigger = false
-			c1.is_smaller = false
+
+			if (closest) then 
+				if (closest.r <= c1.r) then
+					c1.is_bigger = true
+					closest.is_smaller = true
+					if (not c1.is_player) then
+						c1.dx += -1 * sign(closest_resultant.x) * c1.ddx
+						c1.dy += -1 * sign(closest_resultant.y) * c1.ddy
+					end
+				else 
+					c1.is_smaller = true
+					closest.is_bigger = true
+					if (not c1.is_player) then
+						c1.dx += sign(closest_resultant.x) * c1.ddx
+						c1.dy += sign(closest_resultant.y) * c1.ddy
+					end
+				end
+			else
+				c1.is_bigger = false
+				c1.is_smaller = false
+			end
 		end
 	end
 end
