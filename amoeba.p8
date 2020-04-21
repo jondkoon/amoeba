@@ -3,6 +3,7 @@ version 21
 __lua__
 
 #include vector.p8
+#include iris_shot_lib.p8
 
 function random_one(set)
 	return set[1 + flr(rnd(count(set)))]
@@ -26,7 +27,9 @@ function random_sign()
 	return sign(rnd(1) - 0.5)
 end
 
-local colors = {
+level = 1
+
+local starting_colors = {
 	13,
 	6,
 	10,
@@ -37,12 +40,29 @@ local colors = {
 	2,
 	8
 }
+
+local colors_new_game = {
+	13,
+	6,
+	10,
+	8,
+	2,
+	1,
+	14,
+	9,
+	11
+}
+
 local max_r = 9
 
 local size_to_color = {}
-for i = 2, max_r do
-	size_to_color[i] = colors[flr(i * #colors / max_r)]
+function set_size_to_color(colors)
+	for i = 2, max_r do
+		size_to_color[i] = colors[flr(i * #colors / max_r)]
+	end
 end
+
+set_size_to_color(starting_colors)
 
 local circle_id_counter = 0
 function make_circle(o)
@@ -50,7 +70,7 @@ function make_circle(o)
 	return {
 		id = circle_id_counter,
 		is_player = o.is_player,
-		pos = vector{o.x,o.y},
+		pos = vector{o.list,o.y},
 		x = o.x,
 		y = o.y,
 		r = o.r,
@@ -117,62 +137,65 @@ function make_circle(o)
 	}
 end
 
-player = make_circle({
-	is_player = true,
-	x = 0,
-	y = 0,
-	r = 4,
-	v_max = 1.2,
-	update = function(self)
-		if (btn(4)) then
-			local speed_up = self.v_max * 1.5
-			self.dx_max = speed_up
-			self.dx_min = -speed_up
-			self.dy_max = speed_up
-			self.dy_min = -speed_up
-		else
-			self.boosting = false
-			self.dx_max = self.v_max
-			self.dx_min = -self.v_max
-			self.dy_max = self.v_max
-			self.dy_min = -self.v_max
-		end
 
-		if (btn(0)) then
-			self.dx -= self.ddx
-		elseif (btn(1)) then
-			self.dx += self.ddx
-		else
-			if (self.dx > 0) then
-				self.dx -= self.friction
+function make_player()
+	return make_circle({
+		is_player = true,
+		x = 0,
+		y = 0,
+		r = 4,
+		v_max = 1.2,
+		update = function(self)
+			if (btn(4)) then
+				local speed_up = self.v_max * 1.5
+				self.dx_max = speed_up
+				self.dx_min = -speed_up
+				self.dy_max = speed_up
+				self.dy_min = -speed_up
 			else
-				self.dx += self.friction
+				self.boosting = false
+				self.dx_max = self.v_max
+				self.dx_min = -self.v_max
+				self.dy_max = self.v_max
+				self.dy_min = -self.v_max
 			end
-			if (abs(self.dx) <= self.friction) then
-				self.dx = 0
+
+			if (btn(0)) then
+				self.dx -= self.ddx
+			elseif (btn(1)) then
+				self.dx += self.ddx
+			else
+				if (self.dx > 0) then
+					self.dx -= self.friction
+				else
+					self.dx += self.friction
+				end
+				if (abs(self.dx) <= self.friction) then
+					self.dx = 0
+				end
+			end
+			
+			if (btn(3)) then
+				self.dy += self.ddy
+			elseif (btn(2)) then
+				self.dy -= self.ddy
+			else
+				if (self.dy > 0) then
+					self.dy -= self.friction
+				else
+					self.dy += self.friction
+				end
+				if (abs(self.dy) <= self.friction) then
+					self.dy = 0
+				end
 			end
 		end
-		
-		if (btn(3)) then
-			self.dy += self.ddy
-		elseif (btn(2)) then
-			self.dy -= self.ddy
-		else
-			if (self.dy > 0) then
-				self.dy -= self.friction
-			else
-				self.dy += self.friction
-			end
-			if (abs(self.dy) <= self.friction) then
-				self.dy = 0
-			end
-		end
-	end
-})
+	})
+end
+
+player = make_player()
 
 objects = {}
-circles = {}
-add(objects, player)
 
 function make_random_circle()
 	local distance_from_player = 30
@@ -195,10 +218,17 @@ function make_random_circle()
 	return circle
 end
 
-for i = 0, 20 do
-	local circle = make_random_circle()
-	add(objects, circle)
-	add(circles, circle)
+local iris = nil
+
+function start_game()
+	objects = {}
+	player = make_player()
+	iris = make_iris(64, 64)
+	add(objects, player)
+	for i = 0, 20 do
+		local circle = make_random_circle()
+		add(objects, circle)
+	end	
 end
 
 function recycle_circle(circle)
@@ -239,9 +269,15 @@ function recycle_circle(circle)
 	circle.dy = resultant.y + random_sign()
 end
 
+local on_next_level = false
+
 local current_objects = {}
 local c_counter = 1
 function _update60()
+	if (iris) then
+		iris:update()
+	end
+
 	current_objects = {}
 
 	local max_right = player.x + 80
@@ -291,13 +327,26 @@ function _update60()
 						local r_increase = smaller.r / 20
 						bigger.r += r_increase
 						if (bigger.is_player) then
-							if (size_to_color[flr(bigger.r)] != size_to_color[flr(bigger.r - r_increase)]) then
+							if (bigger.r >= max_r) then
+								sfx(3)
+								level += 1
+								if (not on_next_level) then
+									on_next_level = true
+									set_size_to_color(colors_new_game)
+								else
+									on_next_level = false
+									set_size_to_color(starting_colors)
+								end								
+								start_game()
+							elseif (size_to_color[flr(bigger.r)] != size_to_color[flr(bigger.r - r_increase)]) then
 								sfx(1)
 							else
 								sfx(0)
 							end
 						elseif (smaller.is_player) then
 							sfx(2)
+							level = 1
+							start_game()
 						end
 						recycle_circle(smaller)
 					end
@@ -358,6 +407,7 @@ local start_prompt = {
 		end
 		if (btn(4) or btn(5)) then
 			at_title_screen = false
+			start_game()
 		end
 	end,
 	draw = function(self)
@@ -389,15 +439,21 @@ function _draw()
 		draw_title_screen()
 	else 
 		cls(12)
-		draw_background()
 		local center_x = player.x - 64
 		local center_y = player.y - 64
 		camera(center_x, center_y)
+		draw_background()
 		for o in all(current_objects) do
 			if (o.draw) then
 				o:draw()
 			end
 		end
+		camera()
+		if (iris) then
+			iris:draw()
+		end
+		print("level "..level, 100, 1)
+		
 	end
 end
 
@@ -534,3 +590,8 @@ __sfx__
 0001000000070066700a4700e470114701447016470056700e6701147011470114701f4701147006670124700667014470076701f4701f470154701b4701b4701b4700d670164701c4700e670164701c4701a470
 00020000000000f020140301603018040190401a0301b0201b0201c0501a050180401504013040100300e0301002014020160201a0301d040171501a1501c1501d150291502a1502f15030150321503215032150
 000400003a0703907038070340703507032070300702f0702d0702c0702a070260701f4701e4701d4701b4701a47018470174701447011470114700e4700d4700b4700a470094700947008470064700547003470
+000600000000020120251302b1302f1402b14027130221201b120151501d15023140271402b1402d13026130221201b12013120111301414015150181501c1501d150291502115025150291502e1503215037150
+001000001905000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__music__
+06 04424344
+
